@@ -228,6 +228,31 @@
     .fab-wa:hover { color: #fff; transform: scale(1.08); }
     .fab-wa::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--wa); animation: ripple 2.4s ease-out infinite; }
 
+    /* ---------- Music button ---------- */
+    .music-btn {
+      position: fixed; left: 20px; bottom: 20px; z-index: 1050; width: 56px; height: 56px; border-radius: 50%;
+      border: none; display: grid; place-items: center; color: #fff; font-size: 1.4rem; cursor: pointer;
+      background: var(--grad); box-shadow: 0 12px 28px rgba(233,30,99,.4);
+      transition: transform .3s var(--ease);
+    }
+    .music-btn:hover { transform: scale(1.08); }
+    .music-btn.playing i { animation: spin 3s linear infinite; }
+    .music-btn:not(.playing)::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--rani); animation: ripple 2s ease-out infinite; }
+    .music-hint {
+      position: fixed; left: 86px; bottom: 30px; z-index: 1050; padding: .45rem .9rem; border-radius: 999px;
+      background: #fff; color: var(--magenta); font-size: .78rem; font-weight: 600; box-shadow: 0 8px 22px rgba(42,27,46,.15);
+      transition: opacity .4s, transform .4s var(--ease);
+    }
+    .music-hint.hide { opacity: 0; transform: translateX(-10px); pointer-events: none; }
+    .music-eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; margin-right: 6px; vertical-align: -1px; }
+    .music-eq b { width: 3px; background: var(--magenta); border-radius: 2px; animation: eq 1s ease-in-out infinite; }
+    .music-eq b:nth-child(2) { animation-delay: -.3s; } .music-eq b:nth-child(3) { animation-delay: -.6s; }
+    @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 12px; } }
+    @media (max-width: 575.98px) {
+      .music-btn { left: 14px; bottom: 14px; width: 52px; height: 52px; }
+      .music-hint { left: 74px; bottom: 24px; }
+    }
+
     /* ---------- Confetti ---------- */
     .confetti { position: fixed; top: -12px; z-index: 1200; width: 9px; height: 14px; border-radius: 2px; pointer-events: none; animation: drop linear forwards; }
     @keyframes drop { to { transform: translate3d(var(--x), 105vh, 0) rotate(720deg); opacity: .9; } }
@@ -480,6 +505,11 @@
 
   <a href="#" class="fab-wa js-wa" id="fabWa" aria-label="Share invitation on WhatsApp"><i class="bi bi-whatsapp"></i></a>
 
+  <!-- Background music: put your song as "music.mp3" next to this index.html -->
+  <audio id="bgm" src="music.mp3" loop preload="auto"></audio>
+  <button type="button" class="music-btn" id="musicBtn" aria-label="Play music" aria-pressed="false"><i class="bi bi-music-note-beamed"></i></button>
+  <div class="music-hint" id="musicHint"><span class="music-eq"><b></b><b></b><b></b></span>Tap anywhere for music</div>
+
   <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
     <div id="toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite" aria-atomic="true">
       <div class="d-flex"><div class="toast-body" id="toastMsg">Copied</div>
@@ -607,6 +637,67 @@
       }
     }
     document.getElementById("celebrateBtn").addEventListener("click", () => { confetti(); notify("Thank you for your blessings! 💐"); });
+
+    // Confetti as soon as the site opens (two bursts)
+    window.addEventListener("load", () => {
+      setTimeout(() => confetti(120), 600);
+      setTimeout(() => confetti(60), 2200);
+    });
+
+    /* ---------- Background music ---------- */
+    const bgm = document.getElementById("bgm");
+    const musicBtn = document.getElementById("musicBtn");
+    const musicHint = document.getElementById("musicHint");
+    const MUSIC_VOLUME = 0.6;
+    let fadeTimer;
+
+    function setUI(playing) {
+      musicBtn.classList.toggle("playing", playing);
+      musicBtn.setAttribute("aria-pressed", playing);
+      musicBtn.setAttribute("aria-label", playing ? "Pause music" : "Play music");
+      musicBtn.innerHTML = playing ? '<i class="bi bi-disc"></i>' : '<i class="bi bi-music-note-beamed"></i>';
+      musicHint.classList.toggle("hide", playing);
+    }
+    function fadeTo(target) {
+      clearInterval(fadeTimer);
+      fadeTimer = setInterval(() => {
+        const v = bgm.volume + (target > bgm.volume ? .05 : -.05);
+        bgm.volume = Math.min(1, Math.max(0, v));
+        if (Math.abs(bgm.volume - target) < .06) { bgm.volume = target; clearInterval(fadeTimer); if (target === 0) bgm.pause(); }
+      }, 80);
+    }
+    async function playMusic() {
+      try { bgm.volume = 0; await bgm.play(); fadeTo(MUSIC_VOLUME); setUI(true); return true; }
+      catch { return false; }
+    }
+    function pauseMusic() { fadeTo(0); setUI(false); }
+
+    let userPaused = false;
+    musicBtn.addEventListener("pointerdown", e => e.stopPropagation());
+    musicBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      if (musicBtn.classList.contains("playing")) { userPaused = true; pauseMusic(); }
+      else { userPaused = false; playMusic(); }
+    });
+
+    // Try to start on open; if the browser blocks autoplay, start on the first tap / key press
+    function firstInteraction() {
+      if (!userPaused && bgm.paused) playMusic();
+      ["pointerdown", "touchstart", "keydown"].forEach(ev => removeEventListener(ev, firstInteraction));
+    }
+    playMusic().then(ok => {
+      if (!ok) ["pointerdown", "touchstart", "keydown"].forEach(ev => addEventListener(ev, firstInteraction, { once: true, passive: true }));
+    });
+
+    // Pause when the guest switches tab/app, resume when they come back
+    let wasPlaying = false;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) { wasPlaying = !bgm.paused; bgm.pause(); }
+      else if (wasPlaying) bgm.play().catch(() => {});
+    });
+
+    // If music.mp3 is missing, hide the music controls
+    bgm.addEventListener("error", () => { musicBtn.style.display = "none"; musicHint.style.display = "none"; });
 
     /* ---------- Add to calendar (.ics) ---------- */
     const icsDate = d => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
